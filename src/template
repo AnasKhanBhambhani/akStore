@@ -1,0 +1,207 @@
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useDispatch } from "react-redux";
+import { fetchCatagories, fetchProducts, fetchProductsById, IsError, IsLoadind } from "../Slices/FetchedProductsSlice";
+
+let BaseUrl = import.meta.env.VITE_BASE_URL;
+export const ApifetchProducts = async ({ skip, limit, q, category }) => {
+    const dispatch = useDispatch();
+    const { data: categories } = useQuery({
+        queryKey: ['categories'],
+        queryFn: async () => {
+            return await fetch(`${BaseUrl}/categories`).then((res) =>
+                res.json()
+            );
+        },
+        staleTime: 10000,
+        retry: 10,
+        placeholderData: keepPreviousData,
+        refetchOnReconnect: false,
+        refetchOnWindowFocus: false,
+    });
+    const { data: products, isLoading, isError } = useQuery({
+        queryKey: ['products', skip, limit, q, category],
+        queryFn: async () => {
+            let url = `${BaseUrl}/search?limit=${limit}&skip=${skip}&q=${q}`;
+            if (category) {
+                url = `${BaseUrl}/category/${category}?limit=${limit}&skip=${skip}`
+            }
+            return await fetch(`${url}`).then((res) => res.json())
+        },
+        staleTime: 10000,
+        retry: 10,
+        placeholderData: keepPreviousData,
+    });
+
+    dispatch(IsLoadind(isLoading));
+
+    dispatch(IsError(isError));
+
+    if (products) {
+        dispatch(fetchProducts(products));
+    }
+    if (categories) {
+        dispatch(fetchCatagories(categories));
+
+    }
+}
+export const fetchById = (id) => {
+    const dispatch = useDispatch();
+    const { data: fetchById } = useQuery({
+        queryKey: ['fetchById'],
+        queryFn: async () => {
+            return await fetch(`${BaseUrl}/${id}`).then((res) =>
+                res.json()
+            );
+        },
+        staleTime: 10000,
+        retry: 10,
+        placeholderData: keepPreviousData,
+        refetchOnReconnect: false,
+        refetchOnWindowFocus: false,
+    });
+    if (fetchById) {
+        dispatch(fetchProductsById(fetchById));
+
+    }
+
+}
+
+
+///data product ka 
+import React, { useCallback, useEffect } from 'react'
+import {  useSelector } from 'react-redux'
+import { ApifetchProducts } from '../../../Usecases/Services/Apis'
+import { Link, useSearchParams } from 'react-router-dom';
+import { debounce } from 'lodash';
+import starfill from '../../../Assets/Logo/star.png';
+import star from '../../../Assets/Logo/star (1).png';
+import Poster from '../../Components/Poster';
+import spinner from '../../../Assets/Logo/circle-9360_256.gif'
+import ProductNotFound from './ProductNotFound';
+
+const Products = () => {
+  const [searchParam, setSearchParam] = useSearchParams({ skip: 0, limit: 12 });
+  const skip = parseInt(searchParam.get('skip')) || 0;
+  const limit = parseInt(searchParam.get('limit')) || 0;
+  const category = searchParam.get('category') || '';
+  const q = searchParam.get('q') || '';
+  const products = useSelector(state => state.myProducts.products);
+  const noProducts = products.products
+  console.log(noProducts=='');
+  
+  const categorylist = useSelector(state => state.myProducts.categories);
+  const isLoading = useSelector(state => state.myProducts.isLoading);
+  const isError = useSelector(state => state.myProducts.isError);
+  const fetchproduct = useCallback(() => {
+    ApifetchProducts({ skip, limit, q, category })
+  }, [q, category, limit, skip])
+  useEffect(()=>{
+    const fetchData = async () => {
+      await ApifetchProducts({ skip, limit, q, category });
+    };
+
+    fetchData();
+  },[skip, limit, q, category])
+  // fetchproduct();
+
+  const handleMove = (count) => {
+    setSearchParam((preSearch) => {
+      preSearch.set('skip', Math.max(skip + count, 0));
+      return preSearch;
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  return (
+    <div className="bg-violet-200 rounded-lg my-4 w-[90vw] mx-auto container p-6">
+      <div>
+        <Poster name="Top" info="Products" />
+      </div>
+
+      <div className="relative mt-2 rounded-md flex flex-col md:flex-row items-center gap-8 mb-4">
+        <input
+          onChange={debounce((e) => {
+            setSearchParam((preParams) => {
+              preParams.set('q', e.target.value)
+              preParams.delete('category')
+
+              preParams.set('skip', 0)
+              return preParams;
+            })
+          }, 1000)}
+          type="text"
+          name="price"
+          id="price"
+          className="block w-full rounded-md border-0 py-1.5 pl-7 pr-20 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+          placeholder="IPhone"
+        />
+        <select className="border p-2" onChange={(e) => {
+          setSearchParam((preParams) => {
+            preParams.set('skip', 0)
+            preParams.delete('q');
+            preParams.set('category', e.target.value)
+            return preParams;
+          })
+        }}>
+          <option>Select category</option>
+          {categorylist?.map((category) => (
+            <option key={category.name} value={category.name}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {isLoading && <div className=' text-center flex items-center justify-center'><img src={spinner} alt='spinner' className='text-center w-16' /></div>}
+      {isError && <h1>There is an issue while fetching data....</h1>}
+      {noProducts=='' && <ProductNotFound/>}
+
+      <div className="mt-6 grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 xl:gap-x-8">
+        {products?.products?.map((product) => (
+
+          <div data-aos="flip-up" key={product.id} className="bg-white border border-purple-950  rounded-lg group overflow-hidden cursor-pointer relative z-50 hover:before:bg-black before:absolute before:inset-0 before:opacity-20 before:transition-all">
+            <h3 className="text-sm text-gray-700">
+              <Link to={`/products/${product.id}`} >
+                <span aria-hidden="true" className="absolute inset-0" />
+              </Link>
+            </h3>
+            <div className="w-full h-[300px] overflow-hidden mx-auto aspect-w-16 aspect-h-8">
+              <img src={product.thumbnail} alt={product.tittle}
+                className="h-full w-full object-contain" />
+            </div>
+
+            <div className="absolute mx-auto left-0 right-0 -bottom-80 group-hover:bottom-2 bg-white w-11/12 p-3 rounded-lg transition-all duration-300">
+              <div className="text-center">
+                <h4 className="text-lg text-purple-950 font-bold mt-2">{product.price} Rs</h4>
+                <h3 className="text-base font-bold text-gray-800">{product.title}</h3>
+              </div>
+
+              <div className="flex justify-center space-x-1 mt-4">
+                <img src={starfill} className='w-6' alt="" />
+                <img src={starfill} className='w-6' alt="" />
+                <img src={starfill} className='w-6' alt="" />
+                <img src={starfill} className='w-6' alt="" />
+                <img src={star} className='w-6' alt="" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-12">
+        <button
+          disabled={skip < limit}
+          className="bg-blue-500 px-4 py-1 text-white rounded"
+          onClick={() => { handleMove(-limit) }}>
+          Prev
+        </button>
+        <button
+          disabled={skip + limit >= products?.total}
+          className="bg-purple-500 px-4 py-1 text-white rounded"
+          onClick={() => { handleMove(limit) }}>
+          Next
+        </button>
+      </div>
+    </div>
+
+  )
+}
+
+export default Products
